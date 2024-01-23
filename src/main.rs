@@ -1,119 +1,139 @@
+use std::path::PathBuf;
+use std::process;
+
+use anyhow::{anyhow, Result};
+use clap::Parser;
+use log::debug;
+use physis::repository::Repository;
+use serde_json::json;
+
+use encryptor::encrypt_game_arg;
+
+use crate::cli::{Cli, Commands};
+use crate::client::LoginAuth;
+use crate::client::LoginResponse;
+use crate::launcher::Launcher;
+#[cfg(target_os = "linux")]
+use crate::linux_launcher::LinuxLauncher;
+use crate::settings::{CoreSettings, LoginSettings};
+#[cfg(target_os = "windows")]
+use crate::windows_launcher::WindowsLauncher;
+
 mod cli;
 mod settings;
-mod oxi_file_config;
+mod client;
+mod encryptor;
+mod launcher;
+#[cfg(target_os = "linux")]
+mod linux_launcher;
+#[cfg(target_os = "windows")]
+mod windows_launcher;
 
-use clap::Parser;
-use crate::cli::{Cli, Commands};
-use config::{Config, File, FileFormat};
-use log::debug;
-use crate::oxi_file_config::OxiFileConfig;
-use crate::settings::*;
-
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
-    // Step 1: Create and merge settings
-    let file_lookup = Config::builder()
-        .add_source(File::with_name("settings").format(FileFormat::Ini)).build();
-
-    // Step 2: Convert settings to OxiFileConfig after merge
-    let file_config: Option<OxiFileConfig> = match file_lookup {
-        Ok(config) => {
-            config.try_deserialize().map_err(|e| {
-                debug!("Failed to serialize file: {}", e);
-                e
-            }).ok()
-        },
-        Err(e) => {
-            debug!("Failed to load 'settings' file: {}", e); //TODO why isn't this showing anything in terminal
-            None
-        }
-    };
 
     match &cli.command {
         Commands::Login(login_settings) => {
-            // Merge login settings from the file and CLI
-            let file_login_settings = file_config.as_ref().and_then(|config| config.login.as_ref());
-            let merged_login_settings = merge_login_settings(
-                file_login_settings,
-                login_settings,
-            );
-            if let Err(error) = validate_login_settings(&cli.core, &merged_login_settings) {
-                eprintln!("Error: {}", error);
-                std::process::exit(1);
+            debug!("Login command received. Settings {:#?}", &login_settings);
+            let login_response = send_login_request(&cli.core, login_settings).await?;
+            println!("Login successful. Response: {:#?}", login_response);
+            let login_auth = LoginAuth {
+                sid: login_response.s_id,
+                lobby_host: login_response.lobby_host,
+                frontier_host:  login_response.frontier_host,
+                ..LoginAuth::default()
+            };
+            let game_args = get_game_args(&login_auth, &cli.core)
+                .map_err(|e| anyhow!("Failed to get game args: {}", e))?; // Handle the error properly
+            if login_settings.exit_on_auth {
+                println!("{}", game_args);
+                process::exit(0);
             }
-            debug!("Login command received. Settings {:#?}", &merged_login_settings);
-            // Implement the login logic here
-            // You have merged_login_settings and cli.core to work with
-        }
+            #[cfg(target_os = "linux")]
+                let launcher = LinuxLauncher;
 
+            #[cfg(target_os = "windows")]
+                let launcher = WindowsLauncher;
+            launcher.launch_game(&game_args)?;
+        },
         Commands::Register(_register_settings) => {
             println!("Register command received");
-            // Implement the registration logic here
-            // Directly use register_settings and cli.core, as there are no settings from the file for register
-        }
-    }
-}
-
-///
-fn merge_login_settings(file_login: Option<&LoginSettings>, cli_login: &LoginSettings) -> LoginSettings {
-    LoginSettings {
-        username: if !cli_login.username.is_empty() {
-            Some(cli_login.username.clone())
-        } else {
-            file_login.and_then(|l| Some(l.username.clone()))
-        }.unwrap_or_default(),
-
-        password: if !cli_login.password.is_empty() {
-            Some(cli_login.password.clone())
-        } else {
-            file_login.and_then(|l| Some(l.password.clone()))
-        }.unwrap_or_default(),
-
-        endpoint: if !cli_login.endpoint.is_empty() {
-            Some(cli_login.endpoint.clone())
-        } else {
-            file_login.and_then(|l| Some(l.endpoint.clone()))
-        }.unwrap_or_default(),
-
-        exit_on_auth: cli_login.exit_on_auth,
-    }
-}
-
-
-fn validate_login_settings(core: &CoreSettings, login: &LoginSettings) -> Result<(), String> {
-    // Validate CoreSettings
-    if core.game_dir.is_empty() {
-        return Err("Game directory is required.".to_string());
-    }
-
-    if core.lobby_ip.is_empty() {
-        return Err("Lobby IP is required.".to_string());
-    }
-
-    if core.lobby_port == 0 {
-        return Err("Lobby port is required and must be non-zero.".to_string());
-    }
-
-    if core.lobby_scheme.is_empty() {
-        return Err("Lobby scheme is required.".to_string());
-    }
-
-    // Validate LoginSettings
-    if login.username.is_empty() {
-        return Err("Username for login is required.".to_string());
-    }
-
-    if login.password.is_empty() {
-        return Err("Password for login is required.".to_string());
-    }
-
-    if login.endpoint.is_empty() {
-        return Err("Login endpoint is required.".to_string());
+            todo!()
+        },
     }
 
     Ok(())
 }
 
+async fn send_login_request(core_settings: &CoreSettings, login_settings: &LoginSettings) -> Result<LoginResponse> {
+    let url = format!(
+        "{}://{}:{}{}",
+        core_settings.lobby_scheme,
+        core_settings.lobby_ip,
+        core_settings.lobby_port,
+        login_settings.endpoint
+    );
 
+    let json_data = json!({
+        "username": login_settings.username,
+        "pass": login_settings.password,
+    });
 
+    let client = reqwest::Client::new();
+    let res = client.post(&url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .json(&json_data)
+        .send()
+        .await;
+
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                let login_response = response.json::<LoginResponse>().await
+                    .map_err(|e| anyhow!("Failed to deserialize response body: {}", e))?;
+                Ok(login_response)
+            } else {
+                Err(anyhow!("Login failed with status: {}", response.status()))
+            }
+        },
+        Err(e) => Err(anyhow!("Error sending request: {}", e)),
+    }
+}
+
+fn get_game_args(auth: &LoginAuth, core_settings: &CoreSettings) -> Result<String> {
+    //from root, BaseRepository == ./game/sqpack/ffxiv
+    //from root, expansions == ./game/sqpack/ex1 etc
+    let mut path = PathBuf::from(&core_settings.game_dir);
+    path.push("game");
+    path.push("sqpack");
+    path.push("ffxiv");
+    let base_repository = Repository::from_existing(path.to_str().unwrap()).unwrap();
+    let game_args = vec![
+        ("DEV.DataPathType".to_string(), "1".to_string()),
+        ("DEV.UseSqPack".to_string(), "1".to_string()),
+        ("DEV.MaxEntitledExpansionID".to_string(), auth.max_expansion.to_string()),
+        ("DEV.TestSID".to_string(), auth.sid.clone()),
+        ("SYS.Region".to_string(), auth.region.to_string()),
+        ("language".to_string(), auth.language.to_string()),
+        ("ver".to_string(), base_repository.version.unwrap()),
+        ("DEV.GMServerHost".to_string(), auth.frontier_host.clone()),
+    ];
+    let mut game_args_with_lobby = game_args;
+    for i in 1..=8 {
+        game_args_with_lobby.push((format!("DEV.LobbyHost0{}", i), auth.lobby_host.clone()));
+        game_args_with_lobby.push((format!("DEV.LobbyPort0{}", i), "54994".to_string()));
+    }
+
+    // Join the arguments into a string
+    let arg_joined = game_args_with_lobby
+        .into_iter()
+        .map(|(key, value)| format!(" /{} ={}", key, value))
+        .collect::<Vec<String>>()
+        .join("");
+    debug!("Game_args: {}", arg_joined);
+
+    // Encrypt the arguments
+    encrypt_game_arg(&arg_joined)
+}
