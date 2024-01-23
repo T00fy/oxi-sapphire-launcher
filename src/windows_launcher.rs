@@ -1,6 +1,7 @@
+use std::path::Path;
+use std::process::{Command};
 use anyhow::{anyhow, Error};
 use crate::launcher::Launcher;
-use crate::lutris_launcher::LutrisLauncher;
 
 pub(crate) struct WindowsLauncher;
 
