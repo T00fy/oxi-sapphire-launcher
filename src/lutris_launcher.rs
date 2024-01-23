@@ -7,24 +7,23 @@ use serde_yaml::Value;
 
 use crate::launcher::Launcher;
 
-pub(crate) struct LinuxLauncher;
+pub(crate) struct LutrisLauncher;
 
-
-impl Launcher for LinuxLauncher {
-    fn launch_game(&self, game_args: &str) -> Result<(), Error> {
-        if !LinuxLauncher::is_lutris_installed()? {
+impl Launcher for LutrisLauncher {
+    fn launch_game(&self, game_args: &str, _game_dir: &str) -> Result<(), Error> {
+        if !LutrisLauncher::is_lutris_installed()? {
             return Err(anyhow!("Lutris must be installed on the system."));
         }
 
-        let game_id = LinuxLauncher::get_ffxivsapphire_game_id()?;
-        LinuxLauncher::update_game_args_in_yaml(game_args)?;
-        LinuxLauncher::launch_game_with_lutris(&game_id)?;
+        let game_id = LutrisLauncher::get_ffxivsapphire_game_id()?;
+        LutrisLauncher::update_game_args_in_yaml(game_args)?;
+        LutrisLauncher::launch_game_with_lutris(&game_id)?;
 
         Ok(())
     }
 }
 
-impl LinuxLauncher {
+impl LutrisLauncher {
     fn is_lutris_installed() -> Result<bool, Error> {
         let output = Command::new("lutris")
             .arg("--version")
@@ -41,7 +40,7 @@ impl LinuxLauncher {
 
         let output_str = String::from_utf8_lossy(&output.stdout);
         if output_str.trim().is_empty() {
-            return Err(anyhow!("The command 'lutris -l -j' did not produce any stdout output. Is Lutris installed and configured correctly?"));
+            return Err(anyhow!("The command 'lutris -l -j' did not produce anything to stdout. Is Lutris installed and configured correctly?"));
         }
 
         // Parse the JSON string

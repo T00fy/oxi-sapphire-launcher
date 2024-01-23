@@ -14,7 +14,7 @@ use crate::client::LoginAuth;
 use crate::client::LoginResponse;
 use crate::launcher::Launcher;
 #[cfg(target_os = "linux")]
-use crate::linux_launcher::LinuxLauncher;
+use crate::lutris_launcher::LutrisLauncher;
 use crate::settings::{CoreSettings, LoginSettings};
 #[cfg(target_os = "windows")]
 use crate::windows_launcher::WindowsLauncher;
@@ -25,7 +25,7 @@ mod client;
 mod encryptor;
 mod launcher;
 #[cfg(target_os = "linux")]
-mod linux_launcher;
+mod lutris_launcher;
 #[cfg(target_os = "windows")]
 mod windows_launcher;
 
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
         Commands::Login(login_settings) => {
             debug!("Login command received. Settings {:#?}", &login_settings);
             let login_response = send_login_request(&cli.core, login_settings).await?;
-            println!("Login successful. Response: {:#?}", login_response);
+            debug!("Login successful. Response: {:#?}", login_response);
             let login_auth = LoginAuth {
                 sid: login_response.s_id,
                 lobby_host: login_response.lobby_host,
@@ -52,11 +52,13 @@ async fn main() -> Result<()> {
                 process::exit(0);
             }
             #[cfg(target_os = "linux")]
-                let launcher = LinuxLauncher;
+                let launcher = LutrisLauncher;
 
             #[cfg(target_os = "windows")]
                 let launcher = WindowsLauncher;
-            launcher.launch_game(&game_args)?;
+            launcher.launch_game(&game_args, &cli.core.game_dir)?;
+            println!("Game launch initiated. Please check the game window to ensure it started successfully.");
+            println!("Exiting Oxi Launcher.")
         },
         Commands::Register(_register_settings) => {
             println!("Register command received");
