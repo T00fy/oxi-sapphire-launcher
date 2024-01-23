@@ -72,9 +72,9 @@ async fn main() -> Result<()> {
 async fn send_login_request(core_settings: &CoreSettings, login_settings: &LoginSettings) -> Result<LoginResponse> {
     let url = format!(
         "{}://{}:{}{}",
-        core_settings.lobby_scheme,
-        core_settings.lobby_ip,
-        core_settings.lobby_port,
+        core_settings.frontier_scheme,
+        core_settings.frontier_ip,
+        core_settings.frontier_port,
         login_settings.endpoint
     );
 
@@ -125,7 +125,7 @@ fn get_game_args(auth: &LoginAuth, core_settings: &CoreSettings) -> Result<Strin
     let mut game_args_with_lobby = game_args;
     for i in 1..=8 {
         game_args_with_lobby.push((format!("DEV.LobbyHost0{}", i), auth.lobby_host.clone()));
-        game_args_with_lobby.push((format!("DEV.LobbyPort0{}", i), "54994".to_string()));
+        game_args_with_lobby.push((format!("DEV.LobbyPort0{}", i), "54994".to_string())); //TODO: sapphire does not provide a port, unfortunately. Change this when Sapphire has been fixed upstream.
     }
 
     // Join the arguments into a string
