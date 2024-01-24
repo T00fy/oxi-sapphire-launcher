@@ -10,7 +10,7 @@ pub(crate) struct LoginResponse {
     pub(crate) frontier_host: String,
 }
 
-pub(crate) struct LoginAuth {
+pub(crate) struct LoginAuthResponse {
     pub(crate) sid: String,
     pub(crate) lobby_host: String,
     pub(crate) frontier_host: String,
@@ -19,9 +19,9 @@ pub(crate) struct LoginAuth {
     pub(crate) language: i32,
 }
 
-impl Default for LoginAuth {
+impl Default for LoginAuthResponse {
     fn default() -> Self {
-        LoginAuth {
+        LoginAuthResponse {
             sid: String::new(),
             lobby_host: String::new(),
             frontier_host: String::new(),

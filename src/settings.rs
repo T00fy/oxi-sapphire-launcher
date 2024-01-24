@@ -1,4 +1,7 @@
-use anyhow::{anyhow, Error};
+use std::{env, fs, process};
+use std::fs::File;
+use std::io::Read;
+use anyhow::{anyhow, Context, Error};
 use clap::Parser;
 use serde::Deserialize;
 #[derive(Debug, Deserialize)]
@@ -47,4 +50,36 @@ pub(crate) struct RegisterSettings {
     pub(crate) password: String,
     #[clap(long, default_value = "/sapphire-api/lobby/createAccount")]
     pub(crate) endpoint: String,
+}
+
+
+pub(crate) fn load_core_settings() -> anyhow::Result<CoreSettings, Error> {
+    let mut file = File::open("core_settings.json")
+        .context("Failed to open core_settings.json")?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .context("Failed to read core_settings.json")?;
+    let core_settings: CoreSettings = serde_json::from_str(&contents)
+        .context("Failed to parse core_settings.json")?;
+
+    // Validate that all fields are populated
+    core_settings.validate()?;
+
+    Ok(core_settings)
+}
+
+pub(crate) fn ensure_core_settings_exists() -> anyhow::Result<(), std::io::Error> {
+    let mut exe_path = env::current_exe()?;
+    exe_path.pop(); // remove the executable name, leaving just the path
+    let config_path = exe_path.join("core_settings.json");
+
+    if !config_path.exists() {
+        println!("core_settings does not exist. Creating default core_settings.json");
+        let default_config = include_str!("../resources/core_settings.json");
+        fs::write(&config_path, default_config)?;
+        println!("Modify core_settings.json as needed and rerun oxi launcher");
+        process::exit(2);
+    }
+
+    Ok(())
 }

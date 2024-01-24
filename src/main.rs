@@ -1,9 +1,7 @@
-use std::{env, fs, process};
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
+use std::process;
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use log::debug;
 use physis::repository::Repository;
@@ -13,12 +11,12 @@ use serde_json::json;
 use encryptor::encrypt_game_arg;
 
 use crate::cli::{Cli, Commands};
-use crate::client::LoginAuth;
+use crate::client::LoginAuthResponse;
 use crate::client::LoginResponse;
 use crate::launcher::Launcher;
 #[cfg(target_os = "linux")]
 use crate::lutris_launcher::LutrisLauncher;
-use crate::settings::{CoreSettings, LoginSettings};
+use crate::settings::{CoreSettings, ensure_core_settings_exists, load_core_settings};
 #[cfg(target_os = "windows")]
 use crate::windows_launcher::WindowsLauncher;
 
@@ -40,34 +38,27 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Login(raw_settings) => {
-            let password = match &raw_settings.password {
+        Commands::Login(login_settings) => {
+            let password = match &login_settings.password {
                 Some(p) => p.clone(),
                 None => {
                     println!("Enter your password:");
-                    read_password().expect("Failed to read password")
+                    read_password().context("Failed to read password")?
                 }
             };
 
-            let login_settings = LoginSettings {
-                username: raw_settings.username.clone(),
-                password: Some(password),
-                endpoint: raw_settings.endpoint.clone(),
-                exit_on_auth: raw_settings.exit_on_auth,
-            };
-
             debug!("Login command received. Settings {:#?}", &login_settings);
-            let login_response = send_login_request(&core_settings, &login_settings).await?;
+            let login_response = send_login_request(&core_settings, &login_settings.username, &password, &login_settings.endpoint).await?;
             debug!("Login successful. Response: {:#?}", login_response);
-            let login_auth = LoginAuth {
+            let login_auth = LoginAuthResponse {
                 sid: login_response.s_id,
                 lobby_host: login_response.lobby_host,
                 frontier_host:  login_response.frontier_host,
-                ..LoginAuth::default()
+                ..LoginAuthResponse::default()
             };
             let game_args = get_game_args(&login_auth, &core_settings)
                 .map_err(|e| anyhow!("Failed to get game args: {}", e))?; // Handle the error properly
-            if raw_settings.exit_on_auth {
+            if login_settings.exit_on_auth {
                 println!("{}", game_args);
                 process::exit(0);
             }
@@ -89,49 +80,20 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn ensure_core_settings_exists() -> Result<(), std::io::Error> {
-    let mut exe_path = env::current_exe()?;
-    exe_path.pop(); // remove the executable name, leaving just the path
-    let config_path = exe_path.join("core_settings.json");
 
-    if !config_path.exists() {
-        println!("core_settings does not exist. Creating default core_settings.json");
-        let default_config = include_str!("../resources/core_settings.json");
-        fs::write(&config_path, default_config)?;
-        println!("Modify core_settings.json as needed and rerun oxi launcher");
-        process::exit(2);
-    }
 
-    Ok(())
-}
-
-fn load_core_settings() -> Result<CoreSettings, Error> {
-    let mut file = File::open("core_settings.json")
-        .context("Failed to open core_settings.json")?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .context("Failed to read core_settings.json")?;
-    let core_settings: CoreSettings = serde_json::from_str(&contents)
-        .context("Failed to parse core_settings.json")?;
-
-    // Validate that all fields are populated
-    core_settings.validate()?;
-
-    Ok(core_settings)
-}
-
-async fn send_login_request(core_settings: &CoreSettings, login_settings: &LoginSettings) -> Result<LoginResponse> {
+async fn send_login_request(core_settings: &CoreSettings, username: &str, password: &str, endpoint: &str) -> Result<LoginResponse> {
     let url = format!(
         "{}://{}:{}{}",
         core_settings.frontier_scheme,
         core_settings.frontier_ip,
         core_settings.frontier_port,
-        login_settings.endpoint
+        endpoint
     );
 
     let json_data = json!({
-        "username": login_settings.username,
-        "pass": login_settings.password,
+        "username": username,
+        "pass": password,
     });
 
     let client = reqwest::Client::new();
@@ -155,7 +117,7 @@ async fn send_login_request(core_settings: &CoreSettings, login_settings: &Login
     }
 }
 
-fn get_game_args(auth: &LoginAuth, core_settings: &CoreSettings) -> Result<String> {
+fn get_game_args(auth: &LoginAuthResponse, core_settings: &CoreSettings) -> Result<String> {
     //from root, BaseRepository == ./game/sqpack/ffxiv
     //from root, expansions == ./game/sqpack/ex1 etc
     let mut path = PathBuf::from(&core_settings.game_dir);
