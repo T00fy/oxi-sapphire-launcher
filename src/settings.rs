@@ -1,9 +1,13 @@
-use std::{env, fs, process};
+use std::{fs, process};
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Context, Error};
 use clap::Parser;
+use dirs::config_dir;
 use serde::Deserialize;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct CoreSettings {
     pub(crate) game_dir: String,
@@ -52,13 +56,15 @@ pub(crate) struct RegisterSettings {
     pub(crate) endpoint: String,
 }
 
-
-pub(crate) fn load_core_settings() -> anyhow::Result<CoreSettings, Error> {
-    let mut file = File::open("core_settings.json")
+pub(crate) fn load_core_settings() -> Result<CoreSettings, Error> {
+    let config_path = get_config_path();
+    let mut file = File::open(config_path)
         .context("Failed to open core_settings.json")?;
+
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .context("Failed to read core_settings.json")?;
+
     let core_settings: CoreSettings = serde_json::from_str(&contents)
         .context("Failed to parse core_settings.json")?;
 
@@ -68,13 +74,17 @@ pub(crate) fn load_core_settings() -> anyhow::Result<CoreSettings, Error> {
     Ok(core_settings)
 }
 
-pub(crate) fn ensure_core_settings_exists() -> anyhow::Result<(), std::io::Error> {
-    let mut exe_path = env::current_exe()?;
-    exe_path.pop(); // remove the executable name, leaving just the path
-    let config_path = exe_path.join("core_settings.json");
+pub(crate) fn ensure_core_settings_exists() -> anyhow::Result<()> {
+    let config_path = get_config_path();
+
+    // Create the parent directory if it does not exist
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
     if !config_path.exists() {
-        println!("core_settings does not exist. Creating default core_settings.json");
+        println!("core_settings.json not setup yet.");
+        println!("Creating default core_settings.json at: {}", config_path.display());
         let default_config = include_str!("../resources/core_settings.json");
         fs::write(&config_path, default_config)?;
         println!("Modify core_settings.json as needed and rerun oxi launcher");
@@ -82,4 +92,8 @@ pub(crate) fn ensure_core_settings_exists() -> anyhow::Result<(), std::io::Error
     }
 
     Ok(())
+}
+
+fn get_config_path() -> PathBuf {
+    config_dir().unwrap().join("oxi-sapphire-launcher/core_settings.json")
 }
