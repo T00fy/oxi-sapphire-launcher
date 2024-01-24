@@ -1,10 +1,13 @@
+use std::{env, fs, process};
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
-use std::process;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use clap::Parser;
 use log::debug;
 use physis::repository::Repository;
+use rpassword::read_password;
 use serde_json::json;
 
 use encryptor::encrypt_game_arg;
@@ -32,12 +35,29 @@ mod windows_launcher;
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
+    ensure_core_settings_exists()?;
+    let core_settings = load_core_settings()?;
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Login(login_settings) => {
+        Commands::Login(raw_settings) => {
+            let password = match &raw_settings.password {
+                Some(p) => p.clone(),
+                None => {
+                    println!("Enter your password:");
+                    read_password().expect("Failed to read password")
+                }
+            };
+
+            let login_settings = LoginSettings {
+                username: raw_settings.username.clone(),
+                password: Some(password),
+                endpoint: raw_settings.endpoint.clone(),
+                exit_on_auth: raw_settings.exit_on_auth,
+            };
+
             debug!("Login command received. Settings {:#?}", &login_settings);
-            let login_response = send_login_request(&cli.core, login_settings).await?;
+            let login_response = send_login_request(&core_settings, &login_settings).await?;
             debug!("Login successful. Response: {:#?}", login_response);
             let login_auth = LoginAuth {
                 sid: login_response.s_id,
@@ -45,9 +65,9 @@ async fn main() -> Result<()> {
                 frontier_host:  login_response.frontier_host,
                 ..LoginAuth::default()
             };
-            let game_args = get_game_args(&login_auth, &cli.core)
+            let game_args = get_game_args(&login_auth, &core_settings)
                 .map_err(|e| anyhow!("Failed to get game args: {}", e))?; // Handle the error properly
-            if login_settings.exit_on_auth {
+            if raw_settings.exit_on_auth {
                 println!("{}", game_args);
                 process::exit(0);
             }
@@ -56,10 +76,10 @@ async fn main() -> Result<()> {
 
             #[cfg(target_os = "windows")]
                 let launcher = WindowsLauncher;
-            launcher.launch_game(&game_args, &cli.core.game_dir)?;
+            launcher.launch_game(&game_args, &core_settings.game_dir)?;
             println!("Game launch initiated. Please check the game window to ensure it started successfully.");
             println!("Exiting Oxi Launcher.")
-        },
+        }
         Commands::Register(_register_settings) => {
             println!("Register command received");
             todo!()
@@ -67,6 +87,37 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn ensure_core_settings_exists() -> Result<(), std::io::Error> {
+    let mut exe_path = env::current_exe()?;
+    exe_path.pop(); // remove the executable name, leaving just the path
+    let config_path = exe_path.join("core_settings.json");
+
+    if !config_path.exists() {
+        println!("core_settings does not exist. Creating default core_settings.json");
+        let default_config = include_str!("../resources/core_settings.json");
+        fs::write(&config_path, default_config)?;
+        println!("Modify core_settings.json as needed and rerun oxi launcher");
+        process::exit(2);
+    }
+
+    Ok(())
+}
+
+fn load_core_settings() -> Result<CoreSettings, Error> {
+    let mut file = File::open("core_settings.json")
+        .context("Failed to open core_settings.json")?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .context("Failed to read core_settings.json")?;
+    let core_settings: CoreSettings = serde_json::from_str(&contents)
+        .context("Failed to parse core_settings.json")?;
+
+    // Validate that all fields are populated
+    core_settings.validate()?;
+
+    Ok(core_settings)
 }
 
 async fn send_login_request(core_settings: &CoreSettings, login_settings: &LoginSettings) -> Result<LoginResponse> {
