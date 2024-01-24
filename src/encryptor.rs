@@ -5,6 +5,7 @@ use log::debug;
 use physis::blowfish::Blowfish;
 use sysinfo::System;
 
+/// Heavily inspired by astra's implementation
 pub(crate) fn encrypt_game_arg(arg: &str) -> anyhow::Result<String> {
     let ticks = tick_count();
     debug!("Raw ticks: {:?}", ticks);
@@ -33,9 +34,6 @@ pub(crate) fn encrypt_game_arg(arg: &str) -> anyhow::Result<String> {
         debug!("{:02x}", byte);
     }
 
-
-    // Encode encrypted data in Base64
-    // Create a String to hold the base64 output
     let mut base64_output = String::new();
 
     // Encode encrypted data in Base64

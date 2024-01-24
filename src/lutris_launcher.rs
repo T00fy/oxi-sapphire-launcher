@@ -89,9 +89,9 @@ impl LutrisLauncher {
             .arg("LUTRIS_SKIP_INIT=1")
             .arg("lutris")
             .arg(format!("lutris:rungameid/{}", game_id))
-            .stdout(Stdio::null())  // Redirect stdout to /dev/null
-            .stderr(Stdio::null())  // Redirect stderr to /dev/null
-            .spawn()?; // Spawn the process without waiting for it to finish
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
 
         Ok(())
     }

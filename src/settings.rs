@@ -36,12 +36,16 @@ impl CoreSettings {
 
 #[derive(Debug, Deserialize, Parser)]
 pub(crate) struct LoginSettings {
+    ///Username for login.
     #[clap(long)]
     pub(crate) username: String,
+    ///Password for login. For the security conscious this can be omitted. If not passed in, you will be prompted to enter your password securely.
     #[clap(long)]
     pub(crate) password: Option<String>,
+    ///API endpoint for the login server.
     #[clap(long, default_value = "/sapphire-api/lobby/login")]
     pub(crate) endpoint: String,
+    ///Prints out the game args and exits without launching the game. Useful for debugging.
     #[clap(long)]
     pub(crate) exit_on_auth: bool,
 }
@@ -52,6 +56,7 @@ pub(crate) struct RegisterSettings {
     pub(crate) username: String,
     #[clap(long)]
     pub(crate) password: String,
+    ///API endpoint for creating an account on the login server.
     #[clap(long, default_value = "/sapphire-api/lobby/createAccount")]
     pub(crate) endpoint: String,
 }
@@ -68,7 +73,6 @@ pub(crate) fn load_core_settings() -> Result<CoreSettings, Error> {
     let core_settings: CoreSettings = serde_json::from_str(&contents)
         .context("Failed to parse core_settings.json")?;
 
-    // Validate that all fields are populated
     core_settings.validate()?;
 
     Ok(core_settings)
@@ -77,7 +81,6 @@ pub(crate) fn load_core_settings() -> Result<CoreSettings, Error> {
 pub(crate) fn ensure_core_settings_exists() -> anyhow::Result<()> {
     let config_path = get_config_path();
 
-    // Create the parent directory if it does not exist
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
     }

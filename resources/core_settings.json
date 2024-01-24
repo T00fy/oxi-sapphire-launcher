@@ -1,6 +1,6 @@
 {
-  "game_dir": "C:\Program Files (x86)\SquareEnix\FINAL FANTASY XIV - A Realm Reborn",
-  "frontier_ip": "192.168.0.1",
+  "game_dir": "C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn",
+  "frontier_ip": "127.0.0.1",
   "frontier_port": 8080,
   "frontier_scheme": "http"
 }

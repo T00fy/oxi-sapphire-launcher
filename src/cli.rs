@@ -11,8 +11,6 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Commands {
-    /// Login operation
     Login(LoginSettings),
-    /// Registration operation
     Register(RegisterSettings),
 }

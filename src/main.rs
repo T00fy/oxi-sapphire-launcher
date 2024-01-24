@@ -6,13 +6,11 @@ use clap::Parser;
 use log::debug;
 use physis::repository::Repository;
 use rpassword::read_password;
-use serde_json::json;
 
 use encryptor::encrypt_game_arg;
 
 use crate::cli::{Cli, Commands};
 use crate::client::LoginAuthResponse;
-use crate::client::LoginResponse;
 use crate::launcher::Launcher;
 #[cfg(target_os = "linux")]
 use crate::lutris_launcher::LutrisLauncher;
@@ -48,7 +46,7 @@ async fn main() -> Result<()> {
             };
 
             debug!("Login command received. Settings {:#?}", &login_settings);
-            let login_response = send_login_request(&core_settings, &login_settings.username, &password, &login_settings.endpoint).await?;
+            let login_response = client::send_login_request(&core_settings, &login_settings.username, &password, &login_settings.endpoint).await?;
             debug!("Login successful. Response: {:#?}", login_response);
             let login_auth = LoginAuthResponse {
                 sid: login_response.s_id,
@@ -57,7 +55,7 @@ async fn main() -> Result<()> {
                 ..LoginAuthResponse::default()
             };
             let game_args = get_game_args(&login_auth, &core_settings)
-                .map_err(|e| anyhow!("Failed to get game args: {}", e))?; // Handle the error properly
+                .map_err(|e| anyhow!("Failed to get game args: {}", e))?;
             if login_settings.exit_on_auth {
                 println!("{}", game_args);
                 process::exit(0);
@@ -78,43 +76,6 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-
-
-async fn send_login_request(core_settings: &CoreSettings, username: &str, password: &str, endpoint: &str) -> Result<LoginResponse> {
-    let url = format!(
-        "{}://{}:{}{}",
-        core_settings.frontier_scheme,
-        core_settings.frontier_ip,
-        core_settings.frontier_port,
-        endpoint
-    );
-
-    let json_data = json!({
-        "username": username,
-        "pass": password,
-    });
-
-    let client = reqwest::Client::new();
-    let res = client.post(&url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .json(&json_data)
-        .send()
-        .await;
-
-    match res {
-        Ok(response) => {
-            if response.status().is_success() {
-                let login_response = response.json::<LoginResponse>().await
-                    .map_err(|e| anyhow!("Failed to deserialize response body: {}", e))?;
-                Ok(login_response)
-            } else {
-                Err(anyhow!("Login failed with status: {}", response.status()))
-            }
-        },
-        Err(e) => Err(anyhow!("Error sending request: {}", e)),
-    }
 }
 
 fn get_game_args(auth: &LoginAuthResponse, core_settings: &CoreSettings) -> Result<String> {
