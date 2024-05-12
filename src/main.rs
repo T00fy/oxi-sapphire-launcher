@@ -71,7 +71,8 @@ async fn main() -> Result<()> {
         }
         Commands::Register(_register_settings) => {
             println!("Register command received");
-            todo!()
+            let _register_response = client::send_register_request(&core_settings, &_register_settings.username, &_register_settings.password, &_register_settings.endpoint).await?;
+            println!("Account created successfully. Please login with your new account.");
         },
     }
 

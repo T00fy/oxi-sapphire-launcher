@@ -69,3 +69,38 @@ pub(crate) async fn send_login_request(core_settings: &CoreSettings, username: &
         Err(e) => Err(anyhow!("Error sending request: {}", e)),
     }
 }
+
+pub(crate) async fn send_register_request(core_settings: &CoreSettings, username: &str, password: &str, endpoint: &str) -> anyhow::Result<LoginResponse> {
+    let url = format!(
+        "{}://{}:{}{}",
+        core_settings.frontier_scheme,
+        core_settings.frontier_ip,
+        core_settings.frontier_port,
+        endpoint
+    );
+
+    let json_data = json!({
+        "username": username,
+        "pass": password,
+    });
+
+    let client = reqwest::Client::new();
+    let res = client.post(&url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .json(&json_data)
+        .send()
+        .await;
+
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                let register_response = response.json::<LoginResponse>().await
+                    .map_err(|e| anyhow!("Failed to deserialize response body: {}", e))?;
+                Ok(register_response)
+            } else {
+                Err(anyhow!("Register failed with status: {}", response.status()))
+            }
+        },
+        Err(e) => Err(anyhow!("Error sending request: {}", e)),
+    }
+}
