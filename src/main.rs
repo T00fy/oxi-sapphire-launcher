@@ -72,7 +72,27 @@ async fn main() -> Result<()> {
         Commands::Register(_register_settings) => {
             println!("Register command received");
             let _register_response = client::send_register_request(&core_settings, &_register_settings.username, &_register_settings.password, &_register_settings.endpoint).await?;
-            println!("Account created successfully. Please login with your new account.");
+            println!("Account created successfully. Do you want to login? (y/n)");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).context("Failed to read input")?;
+            if input.trim() == "y" {
+                let login_auth = LoginAuthResponse {
+                    sid: _register_response.s_id,
+                    lobby_host: _register_response.lobby_host,
+                    frontier_host:  _register_response.frontier_host,
+                    ..LoginAuthResponse::default()
+                };
+                let game_args = get_game_args(&login_auth, &core_settings)
+                    .map_err(|e| anyhow!("Failed to get game args: {}", e))?;
+                #[cfg(target_os = "linux")]
+                    let launcher = LutrisLauncher;
+
+                #[cfg(target_os = "windows")]
+                    let launcher = WindowsLauncher;
+                launcher.launch_game(&game_args, &core_settings.game_dir)?;
+                println!("Game launch initiated. Please check the game window to ensure it started successfully.");
+                println!("Exiting Oxi Launcher.")
+            }
         },
     }
 
