@@ -10,7 +10,7 @@ use rpassword::read_password;
 use encryptor::encrypt_game_arg;
 
 use crate::cli::{Cli, Commands};
-use crate::client::LoginAuthResponse;
+use crate::client::{LoginAuthResponse, LoginServerResponse};
 use crate::launcher::Launcher;
 #[cfg(target_os = "linux")]
 use crate::lutris_launcher::LutrisLauncher;
@@ -37,66 +37,66 @@ async fn main() -> Result<()> {
 
     match &cli.command {
         Commands::Login(login_settings) => {
-            let password = match &login_settings.password {
-                Some(p) => p.clone(),
-                None => {
-                    println!("Enter your password:");
-                    read_password().context("Failed to read password")?
-                }
-            };
-
-            debug!("Login command received. Settings {:#?}", &login_settings);
-            let login_response = client::send_login_request(&core_settings, &login_settings.username, &password, &login_settings.endpoint).await?;
-            debug!("Login successful. Response: {:#?}", login_response);
-            let login_auth = LoginAuthResponse {
-                sid: login_response.s_id,
-                lobby_host: login_response.lobby_host,
-                frontier_host:  login_response.frontier_host,
-                ..LoginAuthResponse::default()
-            };
-            let game_args = get_game_args(&login_auth, &core_settings)
-                .map_err(|e| anyhow!("Failed to get game args: {}", e))?;
-            if login_settings.exit_on_auth {
-                println!("{}", game_args);
-                process::exit(0);
-            }
-            #[cfg(target_os = "linux")]
-                let launcher = LutrisLauncher;
-
-            #[cfg(target_os = "windows")]
-                let launcher = WindowsLauncher;
-            launcher.launch_game(&game_args, &core_settings.game_dir)?;
-            println!("Game launch initiated. Please check the game window to ensure it started successfully.");
-            println!("Exiting Oxi Launcher.")
+            let password = get_password(&login_settings.password)?;
+            let login_response = client::send_login_request(&core_settings, login_settings, password.as_str()).await?;
+            handle_game_launch(&core_settings, login_response, login_settings.exit_on_auth).await?;
         }
-        Commands::Register(_register_settings) => {
-            println!("Register command received");
-            let _register_response = client::send_register_request(&core_settings, &_register_settings.username, &_register_settings.password, &_register_settings.endpoint).await?;
-            println!("Account created successfully. Do you want to login? (y/n)");
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).context("Failed to read input")?;
-            if input.trim() == "y" {
-                let login_auth = LoginAuthResponse {
-                    sid: _register_response.s_id,
-                    lobby_host: _register_response.lobby_host,
-                    frontier_host:  _register_response.frontier_host,
-                    ..LoginAuthResponse::default()
-                };
-                let game_args = get_game_args(&login_auth, &core_settings)
-                    .map_err(|e| anyhow!("Failed to get game args: {}", e))?;
-                #[cfg(target_os = "linux")]
-                    let launcher = LutrisLauncher;
-
-                #[cfg(target_os = "windows")]
-                    let launcher = WindowsLauncher;
-                launcher.launch_game(&game_args, &core_settings.game_dir)?;
-                println!("Game launch initiated. Please check the game window to ensure it started successfully.");
-                println!("Exiting Oxi Launcher.")
+        Commands::Register(register_settings) => {
+            let password = get_password(&register_settings.password)?;
+            let register_response = client::send_register_request(&core_settings, register_settings, password.as_str()).await?;
+            println!("Account created successfully.");
+            if !register_settings.no_login_on_register {
+                println!("Logging in with the newly created account...");
+                handle_game_launch(&core_settings, register_response, register_settings.exit_on_auth).await?;
             }
         },
     }
+    Ok(())
+}
+
+/// Handles game launching logic after a successful login.
+async fn handle_game_launch(core_settings: &CoreSettings, login_response: LoginServerResponse, exit_on_auth: bool) -> Result<()> {
+    let login_auth = LoginAuthResponse {
+        sid: login_response.s_id,
+        lobby_host: login_response.lobby_host,
+        frontier_host: login_response.frontier_host,
+        ..LoginAuthResponse::default()
+    };
+    let game_args = get_game_args(&login_auth, core_settings)
+        .map_err(|e| anyhow!("Failed to get game args: {}", e))?;
+
+    if exit_on_auth {
+        println!("{}", game_args);
+        process::exit(0);
+    }
+
+    #[cfg(target_os = "linux")]
+        let launcher = LutrisLauncher;
+
+    #[cfg(target_os = "windows")]
+        let launcher = WindowsLauncher;
+    launcher.launch_game(&game_args, &core_settings.game_dir)?;
+    println!("Game launch initiated. Please check the game window to ensure it started successfully.");
+    println!("Exiting Oxi Launcher.");
 
     Ok(())
+}
+
+
+/// Prompts for password if not provided.
+fn get_password(password: &Option<String>) -> Result<String> {
+    match password {
+        Some(p) => Ok(p.clone()),
+        None => {
+            println!("Enter your password:");
+            let entered_password = read_password().context("Failed to read password")?;
+            if entered_password.is_empty() {
+                Err(anyhow!("Password cannot be empty"))
+            } else {
+                Ok(entered_password)
+            }
+        }
+    }
 }
 
 fn get_game_args(auth: &LoginAuthResponse, core_settings: &CoreSettings) -> Result<String> {
