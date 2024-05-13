@@ -46,7 +46,7 @@ pub(crate) struct LoginSettings {
     #[clap(long, default_value = "/sapphire-api/lobby/login")]
     pub(crate) endpoint: String,
     ///Prints out the game args and exits without launching the game. Useful for debugging.
-    #[clap(long)]
+    #[clap(long, short = 'e')]
     pub(crate) exit_on_auth: bool,
 }
 
@@ -55,10 +55,16 @@ pub(crate) struct RegisterSettings {
     #[clap(long)]
     pub(crate) username: String,
     #[clap(long)]
-    pub(crate) password: String,
+    pub(crate) password: Option<String>,
     ///API endpoint for creating an account on the login server.
     #[clap(long, default_value = "/sapphire-api/lobby/createAccount")]
     pub(crate) endpoint: String,
+    ///Only create the account and skips logging in automatically after registering.
+    #[clap(long, short = 'n')]
+    pub(crate) no_login_on_register: bool,
+    ///Prints out the game args and exits without launching the game. Does nothing if --no-login-on-register is passed in
+    #[clap(long, short = 'e')]
+    pub(crate) exit_on_auth: bool
 }
 
 pub(crate) fn load_core_settings() -> Result<CoreSettings, Error> {
